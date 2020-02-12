@@ -116,7 +116,7 @@ num_count = [0 for i in range(num_objects)]
 
 for i, data in enumerate(testdataloader, 0):
     try: 
-        points, choose, img, target, model_points, idx, ori_img, img_masked, index  = data
+        points, choose, img, target, model_points, idx, ori_img, img_masked, index, Candidate_mask, box, T_truth  = data
     except:
         continue
 
@@ -170,7 +170,10 @@ for i, data in enumerate(testdataloader, 0):
 
     model_points = model_points[0].cpu().detach().numpy()
     my_r = quaternion_matrix(my_r)[:3, :3]
-    pred = np.dot(model_points, my_r.T) + my_t
+    if mine: 
+        pred = np.dot(model_points, my_r.T) + my_t/1000
+    if not mine:
+        pred = np.dot(model_points, my_r.T) + my_t
     point_proj = np.dot(K,pred.T)
     points_2d = point_proj.T[:,[0,1]]/point_proj.T[:,[2]]
     points_2d = np.floor(points_2d).astype(int)
@@ -182,23 +185,29 @@ for i, data in enumerate(testdataloader, 0):
     img = np.squeeze(ori_img.numpy())
     np.testing.assert_equal(img,testdataset[index][6])
     print(index)
+    
+    y_min, y_max, x_min, x_max = list(map(lambda x: x.numpy().item(),box))
+    cv2.line(img,(x_min,y_max),(x_max,y_max),(0,0,255),3)
+    cv2.line(img,(x_max,y_max),(x_max,y_min),(0,0,255),3)
+    cv2.line(img,(x_min,y_min),(x_min,y_max),(0,0,255),3)
+    cv2.line(img,(x_max,y_min),(x_min,y_min),(0,0,255),3)
 
-    def compute_projection(points_3D,internal_calibration):
-        points_3D = points_3D.T
-        projections_2d = np.zeros((2, points_3D.shape[1]), dtype='float32')
-        camera_projection = (internal_calibration).dot(points_3D)
-        projections_2d[0, :] = camera_projection[0, :]/camera_projection[2, :]
-        projections_2d[1, :] = camera_projection[1, :]/camera_projection[2, :]
-        return projections_2d
 
-    compute_projection(target,K)
-    # for pt in points_2d:
-    #      pt = tuple(pt)
-    #      cv2.circle(img,pt,1,[255,0,0],1)
+#This represents what the network predicts
+    for pt in points_2d:
+         pt = tuple(pt)
+         cv2.circle(img,pt,1,[0,0,255],1)
+    Candidate_mask = np.squeeze(Candidate_mask.numpy()).astype(int)
 
+    #This represents the points sampled from the mask (a grid has been created from where points are sampled)
+    for mask in Candidate_mask:
+        mask = tuple(mask)
+        cv2.circle(img,mask,1,[0,255,0],1)
+    
+    #This represents the points computed through the ground truth transformation
     for tg in targets_2d:
         tg = tuple(tg)
-        cv2.circle(img,tg,3,[255,0,0],3)
+        cv2.circle(img,tg,1,[255,0,0],1)
 
     #test1 = np.squeeze(img_masked.numpy())
     cv2.imshow("idx",img)
