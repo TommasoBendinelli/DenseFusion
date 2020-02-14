@@ -45,10 +45,10 @@ if not mine:
 
 if mine:
     opt_dataset_root = "./datasets/tommaso/tommaso_preprocessed"
-    opt_model = "trained_models/linemod/pose_model_9_0.012956139583687484.pth"
-    opt_refine_model = "trained_models/linemod/pose_refine_model_95_0.007274364822843561.pth"
+    opt_model = "trained_models/tommaso/pose_model_125_0.04890690553695597.pth"
+    opt_refine_model = "trained_models/tommaso/pose_refine_model_8_0.048650759212831234.pth"
 
-    num_objects = 13
+    num_objects = 1
     objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
     num_points = 500
     iteration = 4
@@ -115,6 +115,7 @@ num_count = [0 for i in range(num_objects)]
 # K = np.array([[cam_fx,0,cam_cx],[0,cam_fy,cam_cy],[0,0,1]])
 
 for i, data in enumerate(testdataloader, 0):
+    # FIX ME for making it work
     try: 
         points, choose, img, target, model_points, idx, ori_img, img_masked, index, Candidate_mask, box, T_truth  = data
     except:
@@ -171,7 +172,7 @@ for i, data in enumerate(testdataloader, 0):
     model_points = model_points[0].cpu().detach().numpy()
     my_r = quaternion_matrix(my_r)[:3, :3]
     if mine: 
-        pred = np.dot(model_points, my_r.T) + my_t/1000
+        pred = np.dot(model_points, my_r.T) + my_t
     if not mine:
         pred = np.dot(model_points, my_r.T) + my_t
     point_proj = np.dot(K,pred.T)
