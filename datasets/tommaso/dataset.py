@@ -19,11 +19,12 @@ import scipy.misc
 import scipy.io as scio
 import yaml
 import cv2
+import trimesh
 
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num, add_noise, root, noise_trans, refine,debug = 0):
-        self.objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+    def __init__(self, mode, num, add_noise, root, noise_trans,refine):
+        self.objlist = [1]
         self.mode = mode
 
         self.list_rgb = []
@@ -32,11 +33,11 @@ class PoseDataset(data.Dataset):
         self.list_obj = []
         self.list_rank = []
         self.meta = {}
-        self.pt = {}
+        #self.pt = {}
         self.root = root
         self.noise_trans = noise_trans
         self.refine = refine
-        self.debug = debug
+        self.mesh = {}
 
         item_count = 0
         for item in self.objlist:
@@ -53,11 +54,12 @@ class PoseDataset(data.Dataset):
                     break
                 if input_line[-1:] == '\n':
                     input_line = input_line[:-1]
-                self.list_rgb.append('{0}/data/{1}/rgb/{2}.png'.format(self.root, '%02d' % item, input_line))
+                self.list_rgb.append('{0}/data/{1}/rgb/{2}.jpg'.format(self.root, '%02d' % item, input_line))
                 self.list_depth.append('{0}/data/{1}/depth/{2}.png'.format(self.root, '%02d' % item, input_line))
-                if self.mode == 'eval':
+                #FIX ME
+                if self.mode == 'fixme':
                     self.list_label.append('{0}/segnet_results/{1}_label/{2}_label.png'.format(self.root, '%02d' % item, input_line))
-                else:
+                else: 
                     self.list_label.append('{0}/data/{1}/mask/{2}.png'.format(self.root, '%02d' % item, input_line))
                 
                 self.list_obj.append(item)
@@ -65,16 +67,17 @@ class PoseDataset(data.Dataset):
 
             meta_file = open('{0}/data/{1}/gt.yml'.format(self.root, '%02d' % item), 'r')
             self.meta[item] = yaml.load(meta_file)
-            self.pt[item] = ply_vtx('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
-            
+            # self.pt[item] = ply_vtx('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
+            self.mesh[item] = trimesh.load('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
+
             print("Object {0} buffer loaded".format(item))
 
         self.length = len(self.list_rgb)
 
-        self.cam_cx = 325.26110
-        self.cam_cy = 242.04899
-        self.cam_fx = 572.41140
-        self.cam_fy = 573.57043
+        self.cam_cx = 323.3623962402344
+        self.cam_cy = 247.32833862304688
+        self.cam_fx = 614.28125
+        self.cam_fy = 614.4807739257812
 
         self.xmap = np.array([[j for i in range(640)] for j in range(480)])
         self.ymap = np.array([[i for i in range(640)] for j in range(480)])
@@ -108,7 +111,9 @@ class PoseDataset(data.Dataset):
         if self.mode == 'eval':
             mask_label = ma.getmaskarray(ma.masked_equal(label, np.array(255)))
         else:
-            mask_label = ma.getmaskarray(ma.masked_equal(label, np.array([255, 255, 255])))[:, :, 0]
+            mask_label = ma.getmaskarray(ma.masked_equal(label, np.array(255)))
+        # else:  #FIX ME PLEASE!!!
+        #     mask_label = ma.getmaskarray(ma.masked_equal(label, np.array([255, 255, 255])))[:, :, 0]
         
         mask = mask_label * mask_depth
 
@@ -148,6 +153,7 @@ class PoseDataset(data.Dataset):
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
+
         Candidate_mask = np.concatenate((ymap_masked,xmap_masked),axis=1)
         choose = np.array([choose])
 
@@ -166,37 +172,56 @@ class PoseDataset(data.Dataset):
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
 
-        model_points = self.pt[obj] / 1000.0
-        dellist = [j for j in range(0, len(model_points))]
-        dellist = random.sample(dellist, len(model_points) - self.num_pt_mesh_small)
-        model_points = np.delete(model_points, dellist, axis=0)
+        #model_points = self.pt[obj]
+        # dellist = [j for j in range(0, len(model_points))]
+        # dellist = random.sample(dellist, len(model_points) - self.num_pt_mesh_small)
+        # model_points = np.delete(model_points, dellist, axis=0)
 
         #fw = open('evaluation_result/{0}_model_points.xyz'.format(index), 'w')
         #for it in model_points:
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
+        target_t_re = target_t.reshape(3,1)
+        tmp = np.concatenate((target_r,target_t_re),axis=1)
+        T = np.concatenate((tmp,[[0,0,0,1]]),axis=0)
+        samples =self.mesh[1].sample(500)
+        mesh = self.mesh[1].copy()
+        mesh.apply_transform(T)
+        samples_corr = mesh.sample(500)
+        
 
-        target = np.dot(model_points, target_r.T)
-        if self.add_noise:
-            target = np.add(target, target_t / 1000.0 + add_t)
-            out_t = target_t / 1000.0 + add_t
-        else:
-            target = np.add(target, target_t / 1000.0)
-            out_t = target_t / 1000.0
+        #target = np.dot(model_points, target_r.T)
+        # if self.add_noise:
+        #     target = np.add(target, target_t+ add_t)
+        #     out_t = target_t + add_t
+        # else:
+        #     target = np.add(target, target_t)
+        #     out_t = target_t 
 
         #fw = open('evaluation_result/{0}_tar.xyz'.format(index), 'w')
         #for it in target:
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
+        isTesting = True
+        if isTesting:
+            return torch.from_numpy(cloud.astype(np.float32)), \
+                torch.LongTensor(choose.astype(np.int32)), \
+                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
+                torch.from_numpy(samples_corr.astype(np.float32)), \
+                torch.from_numpy(samples.astype(np.float32)), \
+                torch.LongTensor([self.objlist.index(obj)]), \
+                ori_img, img_masked, index, Candidate_mask, get_bbox(mask_to_bbox(mask_label)), (target_r,target_t)
+                #    torch.LongTensor([3]),\
+        else:
+            return torch.from_numpy(cloud.astype(np.float32)), \
+                torch.LongTensor(choose.astype(np.int32)), \
+                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
+                torch.from_numpy(samples_corr.astype(np.float32)), \
+                torch.from_numpy(samples.astype(np.float32)), \
+                torch.LongTensor([self.objlist.index(obj)])
 
-        return torch.from_numpy(cloud.astype(np.float32)), \
-               torch.LongTensor(choose.astype(np.int32)), \
-               self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-               torch.from_numpy(target.astype(np.float32)), \
-               torch.from_numpy(model_points.astype(np.float32)), \
-               torch.LongTensor([self.objlist.index(obj)]),\
-               ori_img, img_masked, index, Candidate_mask, get_bbox(mask_to_bbox(mask_label)), (target_r,target_t)
-
+               
+               
     def __len__(self):
         return self.length
 
@@ -209,7 +234,10 @@ class PoseDataset(data.Dataset):
         else:
             return self.num_pt_mesh_small
 
-    
+    def visualize(self, index):
+        img = Image.open(self.list_rgb[index])
+        ori_img = np.array(img)
+        return ori_img
 
 
 
@@ -280,15 +308,15 @@ def get_bbox(bbox):
     return rmin, rmax, cmin, cmax
 
 
-def ply_vtx(path):
-    f = open(path)
-    assert f.readline().strip() == "ply"
-    f.readline()
-    f.readline()
-    N = int(f.readline().split()[-1])
-    while f.readline().strip() != "end_header":
-        continue
-    pts = []
-    for _ in range(N):
-        pts.append(np.float32(f.readline().split()[:3]))
-    return np.array(pts)
+# def ply_vtx(path):
+#     f = open(path)
+#     assert f.readline().strip() == "ply"
+#     f.readline()
+#     f.readline()
+#     N = int(f.readline().split()[-1])
+#     while f.readline().strip() != "end_header":
+#         continue
+#     pts = []
+#     for _ in range(N):
+#         pts.append(np.float32(f.readline().split()[:3]))
+#     return np.array(pts)
