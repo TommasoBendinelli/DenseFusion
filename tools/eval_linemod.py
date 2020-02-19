@@ -47,7 +47,7 @@ estimator.eval()
 refiner.eval()
 
 testdataset = PoseDataset_linemod('eval', num_points, False, opt.dataset_root, 0.0, True)
-testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=10)
+testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=0) #Change me back
 
 sym_list = testdataset.get_sym_list()
 num_points_mesh = testdataset.get_num_points_mesh()
@@ -65,6 +65,8 @@ success_count = [0 for i in range(num_objects)]
 num_count = [0 for i in range(num_objects)]
 fw = open('{0}/eval_result_logs.txt'.format(output_result_dir), 'w')
 
+
+
 for i, data in enumerate(testdataloader, 0):
     points, choose, img, target, model_points, idx = data
     if len(points.size()) == 2:
@@ -78,6 +80,8 @@ for i, data in enumerate(testdataloader, 0):
                                                      Variable(model_points).cuda(), \
                                                      Variable(idx).cuda()
 
+#Visualization stuff
+    
     pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
     pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
     pred_c = pred_c.view(bs, num_points)
@@ -118,6 +122,8 @@ for i, data in enumerate(testdataloader, 0):
     model_points = model_points[0].cpu().detach().numpy()
     my_r = quaternion_matrix(my_r)[:3, :3]
     pred = np.dot(model_points, my_r.T) + my_t
+
+
     target = target[0].cpu().detach().numpy()
 
     if idx[0].item() in sym_list:
