@@ -1,1 +1,10 @@
 env/
+!datasets/tommaso
+datasets/tommaso/*
+!datasets/tommaso/dataset.py
+__pycache__
+trained_models/
+*.egg
+*.so
+lib/
+*.png
