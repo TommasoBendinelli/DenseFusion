@@ -26,8 +26,15 @@ from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from
 from lib.knn.__init__ import KNearestNeighbor
 from tools.visualization import Visualizer
 from datasets.tommaso.dataset import PoseDataset as Tommaso_poseDataset
+import argparse
 
-mine = 1
+parser = argparse.ArgumentParser()
+parser.add_argument("mine", help="Which dataset to play? ", type=int)
+parser.add_argument("also testing", help="Plot the results of the testing or just the training", type=int)
+args = vars(parser.parse_args())
+mine = args['mine'] 
+also_testing = args['also testing']
+ 
 #Select which dataset to visualize
 if not mine:
     opt_dataset_root = "./datasets/linemod/Linemod_preprocessed"
@@ -45,11 +52,13 @@ if not mine:
 
 if mine:
     opt_dataset_root = "./datasets/tommaso/tommaso_preprocessed"
-    opt_model = "trained_models/tommaso/pose_model_125_0.04890690553695597.pth"
-    opt_refine_model = "trained_models/tommaso/pose_refine_model_8_0.048650759212831234.pth"
+    opt_model = "trained_models/tommaso/pose_model_1_0.006531128334263187.pth"
+    opt_refine_model = "trained_models/tommaso/pose_refine_model_2_0.004954009364381983.pth"
+    #opt_model = "trained_models/tommaso/pose_model_125_0.04890690553695597.pth"
+    #opt_refine_model = "trained_models/tommaso/pose_refine_model_8_0.048650759212831234.pth"
 
     num_objects = 1
-    objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+    objlist = [3]
     num_points = 500
     iteration = 4
     bs = 1
@@ -58,6 +67,7 @@ if mine:
     knn = KNearestNeighbor(1)
 
 #Defining neural Network
+# if  also_testing:
 estimator = PoseNet(num_points = num_points, num_obj = num_objects)
 estimator.cuda()
 refiner = PoseRefineNet(num_points = num_points, num_obj = num_objects)
@@ -86,10 +96,10 @@ if mine:
     cam_cx = 323.3623962402344
     cam_cy = 247.32833862304688
     K = np.array([[cam_fx,0,cam_cx],[0,cam_fy,cam_cy],[0,0,1]])
-    testdataset = Tommaso_poseDataset('eval', num_points, False, opt_dataset_root, 0.0, True)
+    testdataset = Tommaso_poseDataset('eval', num_points, False, opt_dataset_root, 0.0, True, is_visualized = True)
 
 
-testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=0) #Change me back
+testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=0) #In visualization is fine if it is 0, in training no
 
 sym_list = testdataset.get_sym_list()
 num_points_mesh = testdataset.get_num_points_mesh()
@@ -114,11 +124,13 @@ num_count = [0 for i in range(num_objects)]
 # cam_fy = 573.57043
 # K = np.array([[cam_fx,0,cam_cx],[0,cam_fy,cam_cy],[0,0,1]])
 
+
 for i, data in enumerate(testdataloader, 0):
     # FIX ME for making it work
     try: 
         points, choose, img, target, model_points, idx, ori_img, img_masked, index, Candidate_mask, box, T_truth  = data
-    except:
+    except Exception as e:
+        print(e)
         continue
 
     if len(points.size()) == 2:
@@ -194,26 +206,30 @@ for i, data in enumerate(testdataloader, 0):
     cv2.line(img,(x_max,y_min),(x_min,y_min),(0,0,255),3)
 
 
-#This represents what the network predicts
-    for pt in points_2d:
-         pt = tuple(pt)
-         cv2.circle(img,pt,1,[0,0,255],1)
+    #This represents what the network predicts
+    if also_testing:
+        for pt in points_2d:
+            pt = tuple(pt)
+            cv2.circle(img,pt,1,[0,0,255],1)
+
+
+
     Candidate_mask = np.squeeze(Candidate_mask.numpy()).astype(int)
 
-    #This represents the points sampled from the mask (a grid has been created from where points are sampled)
-    for mask in Candidate_mask:
-        mask = tuple(mask)
-        cv2.circle(img,mask,1,[0,255,0],1)
-    
-    #This represents the points computed through the ground truth transformation
-    for tg in targets_2d:
-        tg = tuple(tg)
-        cv2.circle(img,tg,1,[255,0,0],1)
+    # #This represents the points sampled from the mask (a grid has been created from where points are sampled)
+    # for mask in Candidate_mask:
+    #     mask = tuple(mask)
+    #     cv2.circle(img,mask,1,[0,255,0],1)
+
+    # #This represents the points computed through the ground truth transformation
+    # for tg in targets_2d:
+    #     tg = tuple(tg)
+    #     cv2.circle(img,tg,1,[255,0,0],1)
 
     #test1 = np.squeeze(img_masked.numpy())
     cv2.imshow("idx",img)
-    if cv2.waitKey(1000//120) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-    
+        
 
 
