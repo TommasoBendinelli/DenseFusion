@@ -1,0 +1,80 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug eval_linemod.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/eval_linemod.py",
+            "args": ["--dataset_root", "./datasets/linemod/Linemod_preprocessed",
+                "--model", "trained_models/linemod/pose_model_9_0.012956139583687484.pth",
+                "--refine_model", "trained_models/linemod/pose_refine_model_95_0.007274364822843561.pth"],
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+            "justMyCode": false,
+            "subProcess":true
+        },
+        {
+            "name": "Debug visualize_result.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/visualize_result.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+            "args": ["1","1"],
+            "justMyCode": false,
+            "subProcess":true
+        },
+        {
+            "name": "Train custom dataset",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/train.py",
+            "args": ["--dataset", "tommaso",
+                "--dataset_root", "./datasets/tommaso/tommaso_preprocessed", "--workers", "0"],
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+            "justMyCode": false,
+            "subProcess":true
+        }
+        {
+            "name": "Train linemod dataset",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/train.py",
+            "args": ["--dataset", "linemod",
+                "--dataset_root", "./datasets/linemod/Linemod_preprocessed", "--workers", "0"],
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+            "justMyCode": false,
+            "subProcess":true
+        }
+        // {
+        //     "name": "Train with tuning",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "${workspaceFolder}/tools/train_with_tuning.py",
+        //     "args": ["--dataset", "tommaso",
+        //         "--dataset_root", "${workspaceFolder}/datasets/tommaso/tommaso_preprocessed", "--workers", "0"],
+        //     "console": "integratedTerminal",
+        //     "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+        //     "justMyCode": false,
+        //     "subProcess":true
+        // }
+        {
+            "name": "Train with tuning 2",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/train_with_tuning2.py",
+            "args": ["--dataset", "tommaso",
+                "--dataset_root", "${workspaceFolder}/datasets/tommaso/tommaso_preprocessed", "--workers", "0"],
+            "console": "integratedTerminal",
+            "env": {"PYTHONUNBUFFERED":"True","CUDA_VISIBLE_DEVICES":"0"},
+            "justMyCode": false,
+            "subProcess":true
+        }
+    ]
+}

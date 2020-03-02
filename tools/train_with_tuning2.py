@@ -485,7 +485,7 @@ if __name__ == "__main__":
 
     BayesianSearhSpace = {"lr":(0.000001,0.0001), "decay": (0.3,0.2), "noise_trans":(0,0.03), "num_points": (500,3000),"w":(0.05,0.0001),"w_rate":(0.5,0)}
 
-    refinement = True
+    refinement = False
     if refinement == True:
         opt.resume_posenet = "pose_model_22_0.04841270416657975.pth"
         opt.refine_margin = "0.04845"

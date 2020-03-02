@@ -23,7 +23,7 @@ import cv2
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, num, add_noise, root, noise_trans, refine,debug = 0):
-        self.objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+        self.objlist = [1] #[1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
         self.mode = mode
 
         self.list_rgb = []
@@ -194,8 +194,8 @@ class PoseDataset(data.Dataset):
                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
-               torch.LongTensor([self.objlist.index(obj)]),\
-               ori_img, img_masked, index, Candidate_mask, get_bbox(mask_to_bbox(mask_label)), (target_r,target_t)
+               torch.LongTensor([self.objlist.index(obj)])
+            #    ori_img, img_masked, index, Candidate_mask, get_bbox(mask_to_bbox(mask_label)), (target_r,target_t)
 
     def __len__(self):
         return self.length

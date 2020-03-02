@@ -20,10 +20,11 @@ import scipy.io as scio
 import yaml
 import cv2
 import trimesh
+import open3d as o3d
 
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num, add_noise, root, noise_trans,refine):
+    def __init__(self, mode, num, add_noise, root, noise_trans,refine, is_visualized = False):
         self.objlist = [1]
         self.mode = mode
 
@@ -38,6 +39,7 @@ class PoseDataset(data.Dataset):
         self.noise_trans = noise_trans
         self.refine = refine
         self.mesh = {}
+        self.is_visualized = is_visualized
 
         item_count = 0
         for item in self.objlist:
@@ -68,8 +70,9 @@ class PoseDataset(data.Dataset):
             meta_file = open('{0}/data/{1}/gt.yml'.format(self.root, '%02d' % item), 'r')
             self.meta[item] = yaml.load(meta_file)
             # self.pt[item] = ply_vtx('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
-            self.mesh[item] = trimesh.load('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
-
+            # self.mesh[item] = trimesh.load('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
+            self.mesh[item] = o3d.io.read_triangle_mesh('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
+            # self.mesh[item].apply_obb()
             print("Object {0} buffer loaded".format(item))
 
         self.length = len(self.list_rgb)
@@ -87,8 +90,8 @@ class PoseDataset(data.Dataset):
         self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
         self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         self.border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
-        self.num_pt_mesh_large = 500
-        self.num_pt_mesh_small = 500
+        self.num_pt_mesh_large = num
+        self.num_pt_mesh_small = num
         self.symmetry_obj_idx = [7, 8]
 
     def __getitem__(self, index):
@@ -99,7 +102,7 @@ class PoseDataset(data.Dataset):
         obj = self.list_obj[index]
         rank = self.list_rank[index]        
 
-        if obj == 2:
+        if obj == 99:
             for i in range(0, len(self.meta[obj][rank])):
                 if self.meta[obj][rank][i]['obj_id'] == 2:
                     meta = self.meta[obj][rank][i]
@@ -172,7 +175,7 @@ class PoseDataset(data.Dataset):
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
 
-        #model_points = self.pt[obj]
+        
         # dellist = [j for j in range(0, len(model_points))]
         # dellist = random.sample(dellist, len(model_points) - self.num_pt_mesh_small)
         # model_points = np.delete(model_points, dellist, axis=0)
@@ -181,13 +184,20 @@ class PoseDataset(data.Dataset):
         #for it in model_points:
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
+
         target_t_re = target_t.reshape(3,1)
         tmp = np.concatenate((target_r,target_t_re),axis=1)
         T = np.concatenate((tmp,[[0,0,0,1]]),axis=0)
-        samples =self.mesh[1].sample(500)
-        mesh = self.mesh[1].copy()
-        mesh.apply_transform(T)
-        samples_corr = mesh.sample(500)
+        model_points = self.mesh[obj].sample_points_poisson_disk(self.num)
+        target = copy.deepcopy(model_points)
+        target.transform(T)
+        target = np.asarray(target.points)
+        model_points = np.asarray(model_points.points)
+
+        # samples =self.mesh[obj].sample(self.num)
+        # mesh = self.mesh[obj].copy()
+        # mesh.apply_transform(T)
+        # samples_corr = mesh.sample(self.num)
         
 
         #target = np.dot(model_points, target_r.T)
@@ -202,13 +212,12 @@ class PoseDataset(data.Dataset):
         #for it in target:
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         #fw.close()
-        isTesting = True
-        if isTesting:
+        if self.is_visualized:
             return torch.from_numpy(cloud.astype(np.float32)), \
                 torch.LongTensor(choose.astype(np.int32)), \
                 self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-                torch.from_numpy(samples_corr.astype(np.float32)), \
-                torch.from_numpy(samples.astype(np.float32)), \
+                torch.from_numpy(target.astype(np.float32)), \
+                torch.from_numpy(model_points.astype(np.float32)), \
                 torch.LongTensor([self.objlist.index(obj)]), \
                 ori_img, img_masked, index, Candidate_mask, get_bbox(mask_to_bbox(mask_label)), (target_r,target_t)
                 #    torch.LongTensor([3]),\
@@ -216,8 +225,8 @@ class PoseDataset(data.Dataset):
             return torch.from_numpy(cloud.astype(np.float32)), \
                 torch.LongTensor(choose.astype(np.int32)), \
                 self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-                torch.from_numpy(samples_corr.astype(np.float32)), \
-                torch.from_numpy(samples.astype(np.float32)), \
+                torch.from_numpy(target.astype(np.float32)), \
+                torch.from_numpy(model_points.astype(np.float32)), \
                 torch.LongTensor([self.objlist.index(obj)])
 
                

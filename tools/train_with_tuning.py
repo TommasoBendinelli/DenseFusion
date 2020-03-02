@@ -49,7 +49,16 @@ parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume 
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 opt = parser.parse_args()
 
+
+
+# class TrainDenseFusion(tune.Trainable):
+#     def _setup(self,config):
+#         self.train_loader, 
+
+
 def process_data(dataset = 'tommaso', num_points = None):
+
+
     if dataset == 'ycb':
         dataset = PoseDataset_ycb('train',num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
     elif opt.dataset == 'linemod':
@@ -70,36 +79,27 @@ def process_data(dataset = 'tommaso', num_points = None):
     opt.sym_list = dataset.get_sym_list()
     opt.num_points_mesh = dataset.get_num_points_mesh()
     return dataloader, testdataloader, opt.sym_list, opt.num_points_mesh 
-
-def settings(dataset = 'tommaso'):
-    if dataset == 'ycb':
-        num_objects = 21 #number of object classes in the dataset
-        num_points = 1000 #number of points on the input pointcloud
-        outf = 'trained_models/ycb' #folder to save trained models
-        log_dir = 'experiments/logs/ycb' #folder to save logs
-        repeat_epoch = 1 #number of repeat times for one epoch training
-    elif dataset == 'linemod':
-        num_objects = 13
-        num_points = 500
-        outf = 'trained_models/linemod'
-        log_dir = 'experiments/logs/linemod'
-        repeat_epoch = 20
-    elif dataset == 'tommaso':
-        num_objects = 1
-        num_points = 500
-        outf = '/home/labuser/repos/DenseFusion/trained_models/tommaso'
-        log_dir = '/home/labuser/repos/DenseFusion/experiments/logs/tommaso'
-        repeat_epoch = 20
     
     return num_objects,num_points,outf,log_dir, repeat_epoch
 
-def train_estimator(config):
+def model_initialization(num_points):
+    estimator = PoseNet(num_points = num_points, num_obj = num_objects)
+    estimator.cuda()
+    #dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+    #testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    optimizer = optim.Adam(estimator.parameters(), lr=config["lr"])
+    refiner.cuda()
+    return estimator, refiner 
 
+def train_estimator(config):
     manualSeed = random.randint(1, 10000)
     random.seed(manualSeed)
     torch.manual_seed(manualSeed)
+    estimator, refiner = model_initialization(num_points = config['num_points'])
 
-    num_objects,num_points,outf,log_dir, repeat_epoch = process_data(dataset="tommaso", num_points = config['number of points'])
+
+    num_objects, num_points,outf,log_dir, repeat_epoch = process_data(dataset="tommaso", num_points = config['num_points'])
     dataloader, testdataloader, opt.sym_list, opt.num_points_mesh  = process_data(dataset = "tommaso")
     
     estimator = PoseNet(num_points = num_points, num_obj = num_objects)
@@ -149,7 +149,7 @@ def train_estimator(config):
                                                                     Variable(idx).cuda()                
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
-                track.log(mean_accuracy=loss)
+                
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
@@ -311,7 +311,156 @@ def main():
     # st_time = time.time()
 
     #search_space = {"lr":tune.sample_from(lambda spec: 10**(-10*np.random.rand())), "decay": tune.sample_from(lambda spec: 10**(-10*np.random.rand()))}
-    search_space = {"lr": 0.0015, "decay":0.3, "noise_trans":0.03, "num_points":500}
+
+    def get_data_loaders(config):
+        if arg.dataset == 'ycb':
+            dataset = PoseDataset_ycb('train',config.num_points, True, opt.dataset_root, opt.noise_trans, config.refine_start)
+        elif opt.dataset == 'linemod':
+            dataset = PoseDataset_linemod('train', config.num_points, True, opt.dataset_root, opt.noise_trans, config.refine_start)
+        elif opt.dataset == 'tommaso':
+            dataset = Tommaso_poseDataset('train', config.num_points, True, './datasets/tommaso/tommaso_preprocessed', config.noise_trans, config.refine_start)
+
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+        if arg.dataset == 'ycb':
+            test_dataset = PoseDataset_ycb('test', config.num_points, False, opt.dataset_root, 0.0, config.refine_start)
+        elif arg.dataset == 'linemod':
+            test_dataset = PoseDataset_linemod('test', config.num_points, False, opt.dataset_root, 0.0, config.refine_start)
+        elif arg.dataset == 'tommaso':
+            test_dataset = Tommaso_poseDataset('test', config.num_points, False, './datasets/tommaso/tommaso_preprocessed', 0.0, config.refine_start)
+
+        testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+
+        sym_list = dataset.get_sym_list()
+        num_points_mesh = dataset.get_num_points_mesh()
+        return dataloader, testdataloader, sym_list, num_points_mesh 
+    
+
+    class TrainDenseFusion(tune.Trainable):
+        def _setup(self,config):
+            self.train_loader, self.self_test_loader, self.sym_list, self.num_points_mesh = get_data_loaders(config)
+            self.estimator = PoseNet(num_points = config.num_points, num_obj = config.num_objects).cuda()
+            self.refiner = PoseRefineNet(num_points = config.num_points, num_obj = config.num_objects).cuda()
+            self.optimizer = optim.Adam(self.estimator.parameters(), lr=config["lr"])
+
+        def _train(self):
+            train(self.)
+
+
+
+    #dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+    #testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    optimizer = optim.Adam(estimator.parameters(), lr=config["lr"])
+    refiner.cuda()        
+
+    class Settings():
+        def __init__(self,opt,config):
+
+            #Fixed
+            self.dataset = opt.dataset
+            if self.dataset == 'ycb':
+                self.num_objects = 21 #number of object classes in the dataset
+                self.num_points = 1000 #number of points on the input pointcloud
+                self.outf = 'trained_models/ycb' #folder to save trained models
+                self.log_dir = 'experiments/logs/ycb' #folder to save logs
+                self.repeat_epoch = 1 #number of repeat times for one epoch training
+            elif self.dataset == 'linemod':
+                self.num_objects = 13
+                self.num_points = 500
+                self.outf = 'trained_models/linemod'
+                self.log_dir = 'experiments/logs/linemod'
+                self.repeat_epoch = 20
+            elif self.dataset == 'tommaso':
+                self.num_objects = 1
+                self.num_points = 500
+                self.outf = '/home/labuser/repos/DenseFusion/trained_models/tommaso'
+                self.log_dir = '/home/labuser/repos/DenseFusion/experiments/logs/tommaso'
+                self.repeat_epoch = 20
+                self.dataset_root = './datasets/tommaso/tommaso_preprocessed'
+
+            if opt.resume_posenet != '':
+                estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
+
+            if opt.resume_refinenet != '':
+                refiner.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_refinenet)))
+                opt.refine_start = True
+                opt.decay_start = True
+                opt.lr *= opt.lr_rate
+                opt.w *= opt.w_rate
+                opt.batch_size = int(opt.batch_size / opt.iteration)
+                optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
+            else:
+                opt.refine_start = False
+                opt.decay_start = False
+                optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+
+            #Argparse
+            self.refine_start = opt.refine_start
+            self.workers = opt.workers
+
+            #Configurable parameters:
+            self.noise_trans = 0 
+
+            self.refine_start = False
+            self.decay_start = False
+            self.optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+
+
+        def loader(self):
+            if self.dataset == 'ycb':
+                dataset = PoseDataset_ycb('train',self.num_points, True, self.dataset_root, self.noise_trans, self.refine_start)
+            elif self.dataset == 'linemod':
+                dataset = PoseDataset_linemod('train', self.num_points, True, self.dataset_root, self.noise_trans, self.refine_start)
+            elif self.dataset == 'tommaso':
+                dataset = Tommaso_poseDataset('train', self.num_points, True, self.dataset_root, self.noise_trans, self.refine_start)
+
+                dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=self.workers)
+            if self.dataset == 'ycb':
+                test_dataset = PoseDataset_ycb('test', self.num_points, False, self.dataset_root, 0.0, self.refine_start)
+            elif self.dataset == 'linemod':
+                test_dataset = PoseDataset_linemod('test',self.num_points, False, self.dataset_root, 0.0, self.refine_start)
+            elif self.dataset == 'tommaso':
+                test_dataset = Tommaso_poseDataset('test', self.num_points, False, self.dataset_root, 0.0, self.refine_start)
+
+            testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=self.workers)
+            return dataloader, testdataloader
+
+        def restore(self):
+            if self.resume_posenet != '':
+                estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
+
+            if opt.resume_refinenet != '':
+                refiner.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_refinenet)))
+                opt.refine_start = True
+                opt.decay_start = True
+                opt.lr *= opt.lr_rate
+                opt.w *= opt.w_rate
+                opt.batch_size = int(opt.batch_size / opt.iteration)
+                optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
+        
+        # @property
+        # def num_objects(self):
+        #     return self._num_objects
+
+        # @property
+        # def num_points(self):
+        #     return self._num_points
+
+        # @property
+        # def outf(self):
+        #     return self._outf
+
+        # @property
+        # def log_dir(self):
+        #     return self._log_dir
+            
+        # @property
+        # def repeat_epoch(self):
+        #     return self._repeat_epoch
+        
+    opt = parser.parse_args()
+    setting = Settings(opt.dataset)
+    search_space = {"lr": 0.0015, "decay":0.3, "noise_trans":0.03, "num_points":500, "args": opt, "setting": setting}
     #test1 = tune.run(train_estimator, config=search_space)
     train_estimator(search_space)
 
