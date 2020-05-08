@@ -28,7 +28,6 @@ from tools.visualization import Visualizer
 from datasets.tommaso.dataset import PoseDataset as Tommaso_poseDataset
 import argparse
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("mine", help="Which dataset to play? ", type=int)
 parser.add_argument("also testing", help="Plot the results of the testing or just the training", type=int)
@@ -53,28 +52,29 @@ if not mine:
 
 if mine:
     opt_dataset_root = "./datasets/tommaso/tommaso_preprocessed"
-    opt_model = "trained_models/tommaso/pose_model_1_0.021815784575678215.pth"
-    opt_refine_model = "trained_models/tommaso/pose_refine_model_10_0.013444575836113132.pth"
+    opt_model = "trained_models/tommaso/pose_model_1_0.006531128334263187.pth"
+    opt_refine_model = "trained_models/tommaso/pose_refine_model_2_0.004954009364381983.pth"
     #opt_model = "trained_models/tommaso/pose_model_125_0.04890690553695597.pth"
     #opt_refine_model = "trained_models/tommaso/pose_refine_model_8_0.048650759212831234.pth"
 
     num_objects = 1
-    objlist = [1]
+    objlist = [3]
     num_points = 500
-    iteration = 2
+    iteration = 4
     bs = 1
     dataset_config_dir = 'datasets/linemod/dataset_config'
     output_result_dir = 'experiments/eval_result/linemod'
     knn = KNearestNeighbor(1)
 
 #Defining neural Network
+device = torch.device('cpu')
 # if  also_testing:
 estimator = PoseNet(num_points = num_points, num_obj = num_objects)
-estimator.cuda()
+#estimator.cuda()
 refiner = PoseRefineNet(num_points = num_points, num_obj = num_objects)
-refiner.cuda()
-estimator.load_state_dict(torch.load(opt_model))
-refiner.load_state_dict(torch.load(opt_refine_model))
+#refiner.cuda()
+estimator.load_state_dict(torch.load(opt_model,map_location=device))
+refiner.load_state_dict(torch.load(opt_refine_model,map_location=device))
 estimator.eval()
 refiner.eval()
 
@@ -96,11 +96,8 @@ if mine:
     cam_fy = 614.4807739257812
     cam_cx = 323.3623962402344
     cam_cy = 247.32833862304688
-    opt_w = 0.015
-    opt_refine_start = False
     K = np.array([[cam_fx,0,cam_cx],[0,cam_fy,cam_cy],[0,0,1]])
-    #testdataset = Tommaso_poseDataset('eval', num_points, False, opt_dataset_root, 0.0, True, is_visualized = True)
-    testdataset = Tommaso_poseDataset('eval', num_points, opt_dataset_root, 0.00,add_noise=False,noise_trans = False, is_visualized = True)
+    testdataset = Tommaso_poseDataset('eval', num_points, False, opt_dataset_root, 0.0, True, is_visualized = True)
 
 
 testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=0) #In visualization is fine if it is 0, in training no
@@ -111,10 +108,10 @@ criterion = Loss(num_points_mesh, sym_list)
 criterion_refine = Loss_refine(num_points_mesh, sym_list)
 
 diameter = []
-# meta_file = open('{0}/models_info.json'.format(dataset_config_dir), 'r')
-# meta = yaml.load(meta_file)
-# for obj in objlist:
-#     diameter.append(meta[obj]['diameter'] / 1000.0 * 0.1)
+meta_file = open('{0}/models_info.yml'.format(dataset_config_dir), 'r')
+meta = yaml.load(meta_file)
+for obj in objlist:
+    diameter.append(meta[obj]['diameter'] / 1000.0 * 0.1)
 print(num_objects)
 
 success_count = [0 for i in range(num_objects)]
@@ -128,11 +125,11 @@ num_count = [0 for i in range(num_objects)]
 # cam_fy = 573.57043
 # K = np.array([[cam_fx,0,cam_cx],[0,cam_fy,cam_cy],[0,0,1]])
 
-total_dis = 0
+
 for i, data in enumerate(testdataloader, 0):
     # FIX ME for making it work
     try: 
-        points, choose, img, target, model_points, idx, ori_img, img_masked, index, Candidate_mask, box, T_truth, gt_mask  = data
+        points, choose, img, target, model_points, idx, ori_img, img_masked, index, Candidate_mask, box, T_truth  = data
     except Exception as e:
         print(e)
         continue
@@ -141,24 +138,14 @@ for i, data in enumerate(testdataloader, 0):
         print('No.{0} NOT Pass! Lost detection!'.format(i))
         fw.write('No.{0} NOT Pass! Lost detection!\n'.format(i))
         continue
-    #     continue
     # points, choose, img, model_points, idx = Variable(points).cuda(), \
     #                                                  Variable(choose).cuda(), \
     #                                                  Variable(img).cuda(), \
     #                                                  Variable(model_points).cuda(), \
     #                                                  Variable(idx).cuda()
-        
-    points, choose, img, target, model_points, idx = Variable(points).cuda(), \
-                                                        Variable(choose).cuda(), \
-                                                        Variable(img).cuda(), \
-                                                        Variable(target).cuda(), \
-                                                        Variable(model_points).cuda(), \
-                                                        Variable(idx).cuda()   
-    
-    pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-    _, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt_w, opt_refine_start)
 
     
+    pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
     pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
     pred_c = pred_c.view(bs, num_points)
     how_max, which_max = torch.max(pred_c, 1)
@@ -169,14 +156,13 @@ for i, data in enumerate(testdataloader, 0):
     my_pred = np.append(my_r, my_t)
 
     for ite in range(0, iteration):
-        T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_points, 1).contiguous().view(1, num_points, 3)
+        T = Variable(torch.from_numpy(my_t.astype(np.float32))).view(1, 3).repeat(num_points, 1).contiguous().view(1, num_points, 3)
         my_mat = quaternion_matrix(my_r)
-        R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
+        R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).view(1, 3, 3)
         my_mat[0:3, 3] = my_t
         
         new_points = torch.bmm((points - T), R).contiguous()
         pred_r, pred_t = refiner(new_points, emb, idx)
-        dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
         pred_r = pred_r.view(1, 1, -1)
         pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
         my_r_2 = pred_r.view(-1).cpu().data.numpy()
@@ -194,6 +180,7 @@ for i, data in enumerate(testdataloader, 0):
         my_r = my_r_final
         my_t = my_t_final
 
+    # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
 
     model_points = model_points[0].cpu().detach().numpy()
     my_r = quaternion_matrix(my_r)[:3, :3]
@@ -205,15 +192,13 @@ for i, data in enumerate(testdataloader, 0):
     points_2d = point_proj.T[:,[0,1]]/point_proj.T[:,[2]]
     points_2d = np.floor(points_2d).astype(int)
 
-    target = np.squeeze(target.cpu().numpy())
-    #target = np.dot(target)
+    target = np.squeeze(target.numpy())
     target_proj = np.dot(K,target.T)
     targets_2d = target_proj.T[:,[0,1]]/target_proj.T[:,[2]]
     targets_2d = np.floor(targets_2d).astype(int)
     img = np.squeeze(ori_img.numpy())
-    #img = np.fliplr(img)
-    #np.testing.assert_equal(img,testdataset[index][6])
-    #print(index)
+    np.testing.assert_equal(img,testdataset[index][6])
+    print(index)
     
     y_min, y_max, x_min, x_max = list(map(lambda x: x.numpy().item(),box))
     cv2.line(img,(x_min,y_max),(x_max,y_max),(0,0,255),3)
@@ -222,11 +207,11 @@ for i, data in enumerate(testdataloader, 0):
     cv2.line(img,(x_max,y_min),(x_min,y_min),(0,0,255),3)
 
 
-    #This represents what the network predicts (RED)
-    # if also_testing:
-    #     for pt in points_2d:
-    #         pt = tuple(pt)
-    #         cv2.circle(img,pt,1,[0,0,255],1)
+    #This represents what the network predicts
+    if also_testing:
+        for pt in points_2d:
+            pt = tuple(pt)
+            cv2.circle(img,pt,1,[0,0,255],1)
 
 
 
@@ -237,26 +222,15 @@ for i, data in enumerate(testdataloader, 0):
     #     mask = tuple(mask)
     #     cv2.circle(img,mask,1,[0,255,0],1)
 
-    #Bitwise-OR mask and original image
-    gt_mask = np.reshape(gt_mask.numpy().squeeze(), (480,640,1))
-    gt_mask = np.repeat(gt_mask,3,axis=2) 
-    cv2.addWeighted(gt_mask, 0.4, img, 0.6, 0, img)
+    # #This represents the points computed through the ground truth transformation
+    # for tg in targets_2d:
+    #     tg = tuple(tg)
+    #     cv2.circle(img,tg,1,[255,0,0],1)
 
-    #This represents the points computed through the ground truth transformation (BLUE)
-    for tg in targets_2d:
-        tg = tuple(tg)
-        cv2.circle(img,tg,1,[255,0,0],1)
-
-    total_dis = dis+ total_dis
-    print(dis)
-    test1 = np.squeeze(img_masked.numpy())
-    print(dis.cpu())
-    if dis.cpu():
-        print(index)
-        print(dis.cpu())
-        cv2.imshow("Error bigger than 0.02",img)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
-            break
+    #test1 = np.squeeze(img_masked.numpy())
+    cv2.imshow("idx",img)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
         
-print(total_dis/2894)
+
 

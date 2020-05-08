@@ -2,6 +2,7 @@ env/
 !datasets/tommaso
 datasets/tommaso/*
 !datasets/tommaso/dataset.py
+datasets/
 __pycache__
 trained_models/
 *.egg

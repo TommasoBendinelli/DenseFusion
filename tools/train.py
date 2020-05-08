@@ -23,6 +23,7 @@ from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset as PoseDataset_ycb
 from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
 from datasets.tommaso.dataset import PoseDataset as Tommaso_poseDataset
+from datasets.tommaso_linemod.dataset import PoseDataset as Fusion_poseDataset
 from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
@@ -38,12 +39,12 @@ parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--w', default=0.015, help='learning rate')  #Change me to 0.015
 parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate') #Change me to 0.3
 parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
-parser.add_argument('--refine_margin', default=0.013, help='margin to start the training of iterative refinement') #Change me to 0.013
-parser.add_argument('--noise_trans', default=0.001, help='range of the random noise of translation added to the training data')
+parser.add_argument('--refine_margin', default=0.022, help='margin to start the training of iterative refinement') #Change me to 0.013
+parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
-parser.add_argument('--resume_posenet', type=str, default = '', help='resume PoseNet model') #Fix me
-parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--resume_posenet', type=str, default = 'pose_model_1_0.021037247829422328.pth', help='resume PoseNet model')
+parser.add_argument('--resume_refinenet', type=str, default = 'pose_refine_model_14_0.01710226709290129.pth',  help='resume PoseRefineNet model')
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 opt = parser.parse_args()
 
@@ -67,10 +68,16 @@ def main():
         opt.repeat_epoch = 20
     elif opt.dataset == 'tommaso':
         opt.num_objects = 1
-        opt.num_points = 1000
+        opt.num_points = 500
         opt.outf = 'trained_models/tommaso'
         opt.log_dir = 'experiments/logs/tommaso'
-        opt.repeat_epoch = 20
+        opt.repeat_epoch = 2
+    elif opt.dataset == 'tommaso_linemod':
+        opt.num_objects = 14
+        opt.num_points = 500
+        opt.outf = 'trained_models/tommaso_linemod'
+        opt.log_dir = 'experiments/logs/tommaso_linemod'
+        opt.repeat_epoch = 1
 
     else:
         print('Unknown dataset')
@@ -84,13 +91,6 @@ def main():
     if opt.resume_posenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
 
-        #FIX ME
-        opt.refine_start = True
-        opt.decay_start = True
-        opt.lr *= opt.lr_rate
-        opt.w *= opt.w_rate
-        opt.batch_size = int(opt.batch_size / opt.iteration)
-        optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
     if opt.resume_refinenet != '':
         refiner.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_refinenet)))
@@ -111,6 +111,8 @@ def main():
         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
     elif opt.dataset == 'tommaso':
         dataset = Tommaso_poseDataset('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+    elif opt.dataset == 'tommaso_linemod':
+        dataset = Fusion_poseDataset('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
@@ -119,8 +121,10 @@ def main():
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
     elif opt.dataset == 'tommaso':
         test_dataset = Tommaso_poseDataset('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+    elif opt.dataset == 'tommaso_linemod':
+        test_dataset = Fusion_poseDataset('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
 
-        testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
     
     opt.sym_list = dataset.get_sym_list()
     opt.num_points_mesh = dataset.get_num_points_mesh()
@@ -153,17 +157,16 @@ def main():
             for i, data in enumerate(dataloader, 0):
                 try:
                     points, choose, img, target, model_points, idx = data
-                except: 
-                    continue
-                
-                points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+                    points, choose, img, target, model_points, idx = Variable(points).cuda(), \
                                                                     Variable(choose).cuda(), \
                                                                     Variable(img).cuda(), \
                                                                     Variable(target).cuda(), \
                                                                     Variable(model_points).cuda(), \
                                                                     Variable(idx).cuda()                
-                pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+                    pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+                    loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+                except: 
+                    continue
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
@@ -249,6 +252,8 @@ def main():
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
             elif opt.dataset == 'tommaso':
                 dataset = Tommaso_poseDataset('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+            elif opt.dataset == 'tommaso_linemod':
+                dataset = Fusion_poseDataset('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
 
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
             if opt.dataset == 'ycb':
@@ -257,6 +262,8 @@ def main():
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
             elif opt.dataset == 'tommaso':
                 test_dataset = Tommaso_poseDataset('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+            elif opt.dataset == 'tommaso_linemod':
+                test_dataset = Fusion_poseDataset('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
 
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
             
